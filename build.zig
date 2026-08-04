@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) void {
 
     const executables = [_][]const u8{
         "1brc_1",
+        "1brc_2",
     };
 
     for (executables) |exe_name| {
