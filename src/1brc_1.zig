@@ -1,7 +1,4 @@
 const std = @import("std");
-const Io = std.Io;
-
-const zig_1brc = @import("zig_1brc");
 
 const Station = struct {
     min: f64 = 0,
@@ -27,7 +24,10 @@ pub fn main(init: std.process.Init) !void {
 
     const cwd = std.Io.Dir.cwd();
 
-    const file = try cwd.openFile(io, args[1], .{});
+    const input_file = args[1];
+    const output_file = args[2];
+
+    const file = try cwd.openFile(io, input_file, .{});
     defer file.close(io);
 
     var read_buf: [1 << 12]u8 = undefined;
@@ -43,6 +43,8 @@ pub fn main(init: std.process.Init) !void {
     var hash_map: std.StringHashMap(Station) = .init(gpa);
     defer hash_map.deinit();
 
+    const start = std.Io.Timestamp.now(io, .real);
+
     while (true) {
         const read_bytes = try reader.readSliceShort(buffer[read_start..]);
 
@@ -52,7 +54,7 @@ pub fn main(init: std.process.Init) !void {
 
         const total_len = read_start + read_bytes;
 
-        while (i < read_bytes) {
+        while (i < total_len) {
             const next_semicolon = std.mem.findScalarPos(u8, &buffer, i, ';') orelse break;
 
             const key = buffer[i..next_semicolon];
@@ -61,8 +63,7 @@ pub fn main(init: std.process.Init) !void {
 
             const value: f64 = try std.fmt.parseFloat(f64, buffer[next_semicolon + 1 .. next_new_line]);
 
-            const owned_key = try arena.dupe(u8, key);
-            const station = try hash_map.getOrPut(owned_key);
+            const station = try hash_map.getOrPut(key);
 
             if (station.found_existing) {
                 station.value_ptr.sum += value;
@@ -71,6 +72,8 @@ pub fn main(init: std.process.Init) !void {
                 station.value_ptr.max = @max(station.value_ptr.max, value);
                 station.value_ptr.min = @min(station.value_ptr.min, value);
             } else {
+                station.key_ptr.* = try arena.dupe(u8, key);
+
                 station.value_ptr.* = .{
                     .max = value,
                     .min = value,
@@ -88,8 +91,12 @@ pub fn main(init: std.process.Init) !void {
             read_start = 0;
         }
     }
+    const reading = start.durationTo(std.Io.Timestamp.now(io, .real)).toMilliseconds();
+
+    std.debug.print("Finished reading and parsing at {}\n", .{reading});
 
     var output_string_arr: std.ArrayList([]u8) = .empty;
+    defer output_string_arr.deinit(gpa);
 
     var iter = hash_map.keyIterator();
 
@@ -105,11 +112,11 @@ pub fn main(init: std.process.Init) !void {
 
     var write_buf: [1 << 12]u8 = undefined;
 
-    const output_file = try cwd.createFile(io, args[2], .{});
-    defer output_file.close(io);
+    const output_file_creator = try cwd.createFile(io, output_file, .{});
+    defer output_file_creator.close(io);
 
-    var file_writer = output_file.writer(io, &write_buf);
-    var writer = &file_writer.interface;
+    var output_file_writer = output_file_creator.writer(io, &write_buf);
+    var writer = &output_file_writer.interface;
 
     for (output_string_arr.items) |value| {
         const station = hash_map.get(value) orelse unreachable;
@@ -118,6 +125,10 @@ pub fn main(init: std.process.Init) !void {
 
         try writer.print("{s}={d:.1}/{d:.1}/{d:.1}\n", .{ value, station.min, avg, station.max });
     }
+
+    const writing = start.durationTo(std.Io.Timestamp.now(io, .real)).toMilliseconds();
+
+    std.debug.print("Finished writing at {}\n", .{writing});
 
     try writer.flush();
 }
