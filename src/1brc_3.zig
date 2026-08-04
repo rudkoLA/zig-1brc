@@ -101,10 +101,6 @@ pub fn main(init: std.process.Init) !void {
     var thread_station_maps: std.ArrayList(*StationMap) = try .initCapacity(gpa, thread_count);
     defer thread_station_maps.deinit(gpa);
 
-    defer for (thread_station_maps.items) |map| {
-        map.deinit();
-    };
-
     var futures: std.ArrayList(std.Io.Future(ParseResult)) = try .initCapacity(gpa, thread_count);
     defer futures.deinit(gpa);
 
